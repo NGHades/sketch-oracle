@@ -1,0 +1,193 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Sketch Oracle</title>
+<style>
+  :root {
+    color-scheme: light dark;
+    --ink: #16232E;
+    --paper: #F5F7FA;
+    --accent: #E15A24;
+    --rule: #B7C9DA;
+  }
+  body {
+    margin: 0;
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 20px;
+    padding: 40px 16px;
+    background: var(--paper);
+    color: var(--ink);
+    font-family: ui-sans-serif, system-ui, sans-serif;
+  }
+  h1 { font-size: 1.3rem; margin: 0; }
+  #board {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 24px;
+    justify-content: center;
+  }
+  canvas {
+    background: white;
+    border: 2px solid var(--ink);
+    border-radius: 4px;
+    touch-action: none;
+    cursor: crosshair;
+  }
+  #panel { width: 260px; }
+  .guess {
+    display: flex;
+    justify-content: space-between;
+    padding: 8px 10px;
+    border-bottom: 1px solid var(--rule);
+    font-size: 0.95rem;
+  }
+  .guess:first-child { font-weight: 700; color: var(--accent); }
+  .bar {
+    height: 4px;
+    background: var(--accent);
+    border-radius: 2px;
+    margin-top: 4px;
+  }
+  button {
+    margin-top: 14px;
+    padding: 8px 16px;
+    border: 1px solid var(--ink);
+    background: transparent;
+    border-radius: 4px;
+    cursor: pointer;
+    font-size: 0.9rem;
+  }
+  #status { font-size: 0.8rem; color: #6b7280; min-height: 1.2em; }
+</style>
+</head>
+<body>
+  <h1>Sketch Oracle</h1>
+  <div id="board">
+    <canvas id="canvas" width="400" height="400"></canvas>
+    <div id="panel">
+      <div id="guesses"></div>
+      <button id="clear">Clear</button>
+      <div id="status"></div>
+    </div>
+  </div>
+
+<script>
+const API_URL = "http://127.0.0.1:8000/predict";
+
+const canvas = document.getElementById("canvas");
+const ctx = canvas.getContext("2d");
+ctx.fillStyle = "white";
+ctx.fillRect(0, 0, canvas.width, canvas.height);
+ctx.lineWidth = 14;
+ctx.lineCap = "round";
+ctx.lineJoin = "round";
+ctx.strokeStyle = "black";
+
+let drawing = false;
+let hasStroke = false;
+
+function pos(e) {
+  const rect = canvas.getBoundingClientRect();
+  const p = e.touches ? e.touches[0] : e;
+  return [
+    (p.clientX - rect.left) * (canvas.width / rect.width),
+    (p.clientY - rect.top) * (canvas.height / rect.height),
+  ];
+}
+
+function start(e) {
+  drawing = true;
+  hasStroke = true;
+  const [x, y] = pos(e);
+  ctx.beginPath();
+  ctx.moveTo(x, y);
+  e.preventDefault();
+}
+
+function move(e) {
+  if (!drawing) return;
+  const [x, y] = pos(e);
+  ctx.lineTo(x, y);
+  ctx.stroke();
+  e.preventDefault();
+}
+
+function end(e) {
+  if (!drawing) return;
+  drawing = false;
+  if (hasStroke) predict();
+  e.preventDefault();
+}
+
+canvas.addEventListener("mousedown", start);
+canvas.addEventListener("mousemove", move);
+window.addEventListener("mouseup", end);
+canvas.addEventListener("touchstart", start);
+canvas.addEventListener("touchmove", move);
+canvas.addEventListener("touchend", end);
+
+document.getElementById("clear").addEventListener("click", () => {
+  ctx.fillStyle = "white";
+  ctx.fillRect(0, 0, canvas.width, canvas.height);
+  hasStroke = false;
+  document.getElementById("guesses").innerHTML = "";
+  document.getElementById("status").textContent = "";
+});
+
+function to28x28() {
+  const off = document.createElement("canvas");
+  off.width = 28;
+  off.height = 28;
+  const octx = off.getContext("2d");
+  octx.fillStyle = "white";
+  octx.fillRect(0, 0, 28, 28);
+  octx.drawImage(canvas, 0, 0, 28, 28);
+  const { data } = octx.getImageData(0, 0, 28, 28);
+  const pixels = new Array(784);
+  for (let i = 0; i < 784; i++) {
+    // grayscale, inverted so strokes (black on white) become high values like Quick Draw bitmaps
+    const r = data[i * 4];
+    pixels[i] = 255 - r;
+  }
+  return pixels;
+}
+
+async function predict() {
+  const statusEl = document.getElementById("status");
+  statusEl.textContent = "thinking…";
+  try {
+    const res = await fetch(API_URL, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ pixels: to28x28() }),
+    });
+    if (!res.ok) throw new Error(`server returned ${res.status}`);
+    const { predictions } = await res.json();
+    renderGuesses(predictions);
+    statusEl.textContent = "";
+  } catch (err) {
+    statusEl.textContent = `couldn't reach the model: ${err.message}`;
+  }
+}
+
+function renderGuesses(predictions) {
+  const el = document.getElementById("guesses");
+  el.innerHTML = predictions
+    .map(
+      (p) => `
+      <div class="guess">
+        <span>${p.label}</span>
+        <span>${(p.confidence * 100).toFixed(1)}%</span>
+        <div class="bar" style="width:${Math.max(4, p.confidence * 100)}%"></div>
+      </div>`
+    )
+    .join("");
+}
+</script>
+</body>
+</html>
