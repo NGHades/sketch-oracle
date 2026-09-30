@@ -35,8 +35,9 @@ def main():
 
     # kept as uint8 (not normalized) to keep the in-memory/on-disk footprint 4x smaller;
     # normalization happens inside the model's Rescaling layer instead.
-    X = np.concatenate(images).reshape(-1, 28, 28, 1).astype("uint8")
+    X = np.concatenate(images).reshape(-1, 28, 28, 1).astype("uint8", copy=False)
     y = np.concatenate(labels)
+    del images, labels  # free the per-class copies before splitting duplicates X again
 
     X_train, X_rest, y_train, y_rest = train_test_split(
         X, y, test_size=args.val_frac + args.test_frac, stratify=y, random_state=args.seed

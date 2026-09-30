@@ -3,3 +3,4 @@ models/*.keras
 __pycache__/
 *.pyc
 .venv/
+models/saved_model_b1/

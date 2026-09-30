@@ -44,7 +44,16 @@ def main():
     print(f"loading {args.model}")
     model = tf.keras.models.load_model(args.model)
 
-    converter = tf.lite.TFLiteConverter.from_keras_model(model)
+    # Export with a fixed batch dim of 1. A dynamic (-1) batch dim ends up in the
+    # tensors' shape_signature, which LiteRT Web rejects against a concrete
+    # [1,28,28,1] input (the Python interpreter tolerates it; the browser doesn't).
+    saved_model_dir = out_dir / "saved_model_b1"
+    model.export(
+        str(saved_model_dir),
+        format="tf_saved_model",
+        input_signature=[tf.TensorSpec([1, 28, 28, 1], tf.uint8)],
+    )
+    converter = tf.lite.TFLiteConverter.from_saved_model(str(saved_model_dir))
     converter.optimizations = [tf.lite.Optimize.DEFAULT]  # post-training dynamic-range INT8 quantization
     tflite_model = converter.convert()
 
